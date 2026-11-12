@@ -1,0 +1,14 @@
+[
+ {"id":"S01","customer":"Meera Iyer","address":"12 Park St, Kolkata","expectedPackages":1,"window":{"start":"09:00","end":"10:00"},"priority":"Normal"},
+ {"id":"S02","customer":"Rohan Das","address":"45 Lake Rd, Kolkata","expectedPackages":3,"window":{"start":"09:30","end":"10:30"},"priority":"Normal"},
+ {"id":"S03","customer":"Anita Sen","address":"7 Gariahat Rd, Kolkata","expectedPackages":2,"window":{"start":"09:00","end":"10:30"},"priority":"Urgent"},
+ {"id":"S04","customer":"Vikram Shah","address":"88 Salt Lake Sec V","expectedPackages":1,"window":{"start":"10:00","end":"11:00"},"priority":"Normal"},
+ {"id":"S05","customer":"Priya Nair","address":"3 Ballygunge Pl","expectedPackages":4,"window":{"start":"10:30","end":"11:30"},"priority":"Normal"},
+ {"id":"S06","customer":"Sourav Ghosh","address":"21 Dumdum Rd","expectedPackages":1,"window":{"start":"11:00","end":"12:00"},"priority":"Urgent"},
+ {"id":"S07","customer":"Kavita Rao","address":"9 New Alipore","expectedPackages":2,"window":{"start":"11:30","end":"12:30"},"priority":"Normal"},
+ {"id":"S08","customer":"Imran Khan","address":"56 Topsia Rd","expectedPackages":1,"window":{"start":"12:00","end":"13:00"},"priority":"Normal"},
+ {"id":"S09","customer":"Neha Gupta","address":"14 Behala Chowrasta","expectedPackages":3,"window":{"start":"13:00","end":"14:00"},"priority":"Normal"},
+ {"id":"S10","customer":"Arjun Mehta","address":"30 Howrah Maidan","expectedPackages":1,"window":{"start":"13:30","end":"14:30"},"priority":"Normal"},
+ {"id":"S11","customer":"Sunita Paul","address":"67 Jadavpur 8B","expectedPackages":2,"window":{"start":"14:00","end":"15:00"},"priority":"Normal"},
+ {"id":"S12","customer":"Deepak Roy","address":"5 Tollygunge Phari","expectedPackages":1,"window":{"start":"15:00","end":"16:00"},"priority":"Normal"}
+]
