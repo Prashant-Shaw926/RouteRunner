@@ -1,6 +1,6 @@
 # NEXU RouteRunner (React Native + Expo + TypeScript)
-## Prerequisites / Setup / Run: TODO
+## Prerequisites / Setup / Run: pending
 ## Architecture: domain (pure rules) / sync (queue + mock server) / store (Zustand + persist) / app (UI)
-## State management choice: TODO
-## AI usage disclosure: TODO (be honest)
-## Known limitations: TODO
+## State management choice: pending
+## AI usage disclosure: pending
+## Known limitations: pending
