@@ -17,6 +17,11 @@ export interface SyncEngineOptions {
   requestId?: () => string;
 }
 
+export interface EnqueueCallbacks {
+  onOptimistic?: (queued: QueuedAction) => void;
+  onRollback?: () => void;
+}
+
 const defaultSchedule = (callback: () => void, delayMs: number): ReturnType<typeof setTimeout> =>
   setTimeout(callback, delayMs);
 
@@ -50,7 +55,7 @@ export class SyncEngine {
     this.requestId = options.requestId || newRequestId;
   }
 
-  async enqueue(action: EnqueueAction): Promise<QueuedAction> {
+  async enqueue(action: EnqueueAction, callbacks: EnqueueCallbacks = {}): Promise<QueuedAction> {
     const queued: QueuedAction = {
       ...action,
       requestId: action.requestId || this.requestId(),
@@ -59,11 +64,20 @@ export class SyncEngine {
       attempts: 0,
       createdAt: action.createdAt === undefined ? this.clock() : action.createdAt,
     };
+    const previousQueue = this.queue;
     this.queue = [...this.queue, queued];
+    callbacks.onOptimistic?.(queued);
     this.emit();
 
     // Persist the optimistic action before allowing processing to send it.
-    await this.persist();
+    try {
+      await this.persist();
+    } catch (error) {
+      this.queue = previousQueue;
+      callbacks.onRollback?.();
+      this.emit();
+      throw error;
+    }
     if (this.started) this.processWaiting();
     return queued;
   }
@@ -86,9 +100,11 @@ export class SyncEngine {
     const action = this.queue.find((candidate) => candidate.requestId === requestId);
     if (!action || action.state !== 'Needs attention') return;
 
-    action.state = 'Pending';
-    action.attempts = 0;
-    action.nextAttemptAt = undefined;
+    this.queue = this.queue.map((candidate) =>
+      candidate.requestId === requestId
+        ? { ...candidate, state: 'Pending', attempts: 0, nextAttemptAt: undefined }
+        : candidate,
+    );
     this.emit();
     await this.persist();
     this.processWaiting();
@@ -110,17 +126,15 @@ export class SyncEngine {
 
     this.timers.forEach((timer) => this.cancel(timer));
     this.timers.clear();
-    this.queue.forEach((action) => {
-      if (action.state !== 'Synced') {
-        action.state = 'Pending';
-        action.attempts = 0;
-        action.nextAttemptAt = undefined;
-      }
-    });
+    this.queue = this.queue.map((action) =>
+      action.state === 'Synced'
+        ? action
+        : { ...action, state: 'Pending', attempts: 0, nextAttemptAt: undefined },
+    );
     // Coming back online is an explicit recovery action: even Needs attention
     // items re-enter the queue, while online failures still require manual retry.
     this.emit();
-    void this.persist();
+    this.persistInBackground();
     this.processWaiting();
   }
 
@@ -177,33 +191,46 @@ export class SyncEngine {
     this.queue = this.queue.filter((candidate) => candidate.requestId !== action.requestId);
     this.history = [...this.history, synced];
     this.emit();
-    void this.persist();
+    this.persistInBackground();
   }
 
   private failed(action: QueuedAction): void {
     const attempts = action.attempts + 1;
-    action.attempts = attempts;
     if (attempts > BACKOFF_MS.length) {
-      action.state = 'Needs attention';
-      action.nextAttemptAt = undefined;
+      this.queue = this.queue.map((candidate) =>
+        candidate.requestId === action.requestId
+          ? { ...candidate, state: 'Needs attention', attempts, nextAttemptAt: undefined }
+          : candidate,
+      );
       this.emit();
-      void this.persist();
+      this.persistInBackground();
       return;
     }
 
-    action.state = 'Retrying';
-    action.nextAttemptAt = this.clock() + BACKOFF_MS[attempts - 1];
+    const retryingAction = {
+      ...action,
+      state: 'Retrying' as const,
+      attempts,
+      nextAttemptAt: this.clock() + BACKOFF_MS[attempts - 1],
+    };
+    this.queue = this.queue.map((candidate) =>
+      candidate.requestId === action.requestId ? retryingAction : candidate,
+    );
     this.emit();
-    void this.persist();
-    this.scheduleRetry(action, BACKOFF_MS[attempts - 1]);
+    this.persistInBackground();
+    this.scheduleRetry(retryingAction, BACKOFF_MS[attempts - 1]);
   }
 
   private scheduleRetry(action: QueuedAction, delayMs: number): void {
     const timer = this.schedule(() => {
       this.timers.delete(action.requestId);
-      if (action.state === 'Retrying') {
-        action.state = 'Pending';
-        action.nextAttemptAt = undefined;
+      const current = this.queue.find((candidate) => candidate.requestId === action.requestId);
+      if (current && current.state === 'Retrying') {
+        this.queue = this.queue.map((candidate) =>
+          candidate.requestId === action.requestId
+            ? { ...candidate, state: 'Pending', nextAttemptAt: undefined }
+            : candidate,
+        );
         this.emit();
         this.processWaiting();
       }
@@ -213,8 +240,16 @@ export class SyncEngine {
 
   private persist(): Promise<void> {
     const snapshot = this.queue.map((action) => ({ ...action }));
-    this.saveChain = this.saveChain.then(() => this.save(snapshot));
+    // A failed write must not poison later persistence attempts (including
+    // rollback cleanup or a subsequent action).
+    this.saveChain = this.saveChain.catch(() => undefined).then(() => this.save(snapshot));
     return this.saveChain;
+  }
+
+  private persistInBackground(): void {
+    void this.persist().catch((error) => {
+      console.error('Route sync persistence failed', error);
+    });
   }
 
   private emit(): void {

@@ -11,7 +11,8 @@ import { FailReason, QueuedAction, Stop, SyncState } from '../domain/types';
 import { loadInitialRoute } from '../data/loadInitialRoute';
 import { MockServer } from '../sync/MockServer';
 import { SyncEngine } from '../sync/SyncEngine';
-import { storage } from './storage';
+import { storage, waitForLastWrite } from './storage';
+import { syncStateByStop as getSyncStateByStop } from './syncState';
 
 export interface RouteAuth {
   agentName: string | null;
@@ -61,30 +62,62 @@ const defaultState = {
 };
 
 const server = new MockServer();
+const actionLocks = new Set<string>();
+
+const queuesEqual = (left: QueuedAction[], right: QueuedAction[]): boolean =>
+  left.length === right.length &&
+  left.every((action, index) => JSON.stringify(action) === JSON.stringify(right[index]));
 
 export const syncEngine = new SyncEngine(
   server,
   async () => useRouteStore.getState().queue,
   async (queue) => {
-    useRouteStore.setState({ queue });
+    if (!queuesEqual(useRouteStore.getState().queue, queue)) {
+      useRouteStore.setState({ queue });
+    }
+    await waitForLastWrite();
   },
 );
 
 const commitRule = async (
   result: Result<Stop[]>,
+  previousStops: Stop[],
   stopId: string,
   type: QueuedAction['type'],
   payload: Record<string, unknown>,
 ): Promise<string | undefined> => {
   if (!result.ok) return result.error;
 
-  useRouteStore.setState({ stops: result.value });
-  await syncEngine.enqueue({
-    stopId,
-    type,
-    payload,
-    createdAt: Date.now(),
-  });
+  const lockKey = stopId;
+  if (actionLocks.has(lockKey)) return 'Action already in progress.';
+  actionLocks.add(lockKey);
+  const previousStop = previousStops.find((stop) => stop.id === stopId);
+  try {
+    await syncEngine.enqueue(
+      {
+        stopId,
+        type,
+        payload,
+        createdAt: Date.now(),
+      },
+      {
+        // The first persisted Zustand snapshot contains both sides of the
+        // optimistic update, preventing a delivered stop without its queue item.
+        onOptimistic: () => useRouteStore.setState({ stops: result.value, queue: syncEngine.getQueue() }),
+        onRollback: () => {
+          if (!previousStop) return;
+          useRouteStore.setState((state) => ({
+            stops: state.stops.map((stop) => (stop.id === stopId ? previousStop : stop)),
+          }));
+        },
+      },
+    );
+  } catch (error) {
+    console.error('Route action could not be queued', error);
+    return 'Unable to save this action. Please try again.';
+  } finally {
+    actionLocks.delete(lockKey);
+  }
   return undefined;
 };
 
@@ -98,21 +131,23 @@ export const useRouteStore = create<RouteState>()(
       signOut: () => set({ auth: { agentName: null } }),
 
       arrive: async (stopId) => {
-        const result = applyArrive(get().stops, stopId);
-        return commitRule(result, stopId, 'ARRIVE', {});
+        const previousStops = get().stops;
+        const result = applyArrive(previousStops, stopId);
+        return commitRule(result, previousStops, stopId, 'ARRIVE', {});
       },
 
       deliver: async (stopId, recipient, confirmedPackages, nowMs = Date.now()) => {
+        const previousStops = get().stops;
         const demoMinutes = get().settings.demoClockMinutes;
         const result = applyDeliver(
-          get().stops,
+          previousStops,
           stopId,
           recipient,
           confirmedPackages,
           nowMs,
           demoMinutes,
         );
-        return commitRule(result, stopId, 'DELIVER', {
+        return commitRule(result, previousStops, stopId, 'DELIVER', {
           recipient,
           confirmedPackages,
           nowMs,
@@ -121,14 +156,16 @@ export const useRouteStore = create<RouteState>()(
       },
 
       fail: async (stopId, reason, note) => {
+        const previousStops = get().stops;
         const demoMinutes = get().settings.demoClockMinutes;
-        const result = applyFail(get().stops, stopId, reason, note, demoMinutes);
-        return commitRule(result, stopId, 'FAIL', { reason, note, demoMinutes });
+        const result = applyFail(previousStops, stopId, reason, note, demoMinutes);
+        return commitRule(result, previousStops, stopId, 'FAIL', { reason, note, demoMinutes });
       },
 
       undoDeliver: async (stopId, nowMs = Date.now()) => {
-        const result = applyUndoDeliver(get().stops, stopId, nowMs);
-        return commitRule(result, stopId, 'UNDO_DELIVER', { nowMs });
+        const previousStops = get().stops;
+        const result = applyUndoDeliver(previousStops, stopId, nowMs);
+        return commitRule(result, previousStops, stopId, 'UNDO_DELIVER', { nowMs });
       },
 
       retrySync: async (requestId) => {
@@ -171,35 +208,24 @@ export const useRouteStore = create<RouteState>()(
         }
         useRouteStore.setState({ hasHydrated: true });
         syncEngine.setOffline(useRouteStore.getState().settings.offlineMode);
-        void syncEngine.start();
+        void syncEngine.start().catch((startError) => {
+          console.error('Route sync start failed', startError);
+        });
       },
     },
   ),
 );
 
 syncEngine.subscribe((queue) => {
-  useRouteStore.setState({ queue });
+  if (!queuesEqual(useRouteStore.getState().queue, queue)) {
+    useRouteStore.setState({ queue });
+  }
 });
-
-const SYNC_PRIORITY: Record<SyncState, number> = {
-  Synced: 0,
-  Pending: 1,
-  Retrying: 2,
-  'Needs attention': 3,
-};
 
 export const syncStateByStop = (
   stopId: string,
   queue: QueuedAction[] = useRouteStore.getState().queue,
-): SyncState => {
-  const states = queue
-    .filter((action) => action.stopId === stopId)
-    .map((action) => action.state);
-  if (states.length === 0) return 'Synced';
-  return states.reduce((worst, state) =>
-    SYNC_PRIORITY[state] > SYNC_PRIORITY[worst] ? state : worst,
-  );
-};
+): SyncState => getSyncStateByStop(stopId, queue);
 
 export const selectSyncStateByStop =
   (stopId: string) =>

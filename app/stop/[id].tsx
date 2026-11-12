@@ -42,6 +42,7 @@ export default function StopDetails() {
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(Date.now());
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (stop?.status !== 'Delivered') return undefined;
@@ -74,24 +75,69 @@ export default function StopDetails() {
   };
 
   const handleArrive = async () => {
-    showError(await arrive(stop.id));
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      showError(await arrive(stop.id));
+    } catch (actionError) {
+      console.error('Arrive action failed', actionError);
+      setError('Unable to complete this action. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleDeliver = async () => {
+    if (isSubmitting) return;
     if (!/^\d+$/.test(confirmedPackages)) {
       setError('Enter a whole package count.');
       return;
     }
-    showError(await deliver(stop.id, recipient, Number(confirmedPackages)));
+    setIsSubmitting(true);
+    try {
+      showError(await deliver(stop.id, recipient, Number(confirmedPackages)));
+    } catch (actionError) {
+      console.error('Deliver action failed', actionError);
+      setError('Unable to complete this action. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleFail = async () => {
-    showError(await fail(stop.id, reason, note));
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      showError(await fail(stop.id, reason, note));
+    } catch (actionError) {
+      console.error('Fail action failed', actionError);
+      setError('Unable to complete this action. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleUndo = async () => {
-    if (secondsLeft <= 0) return;
-    showError(await undoDeliver(stop.id));
+    if (isSubmitting || secondsLeft <= 0) return;
+    setIsSubmitting(true);
+    try {
+      showError(await undoDeliver(stop.id));
+    } catch (actionError) {
+      console.error('Undo delivery action failed', actionError);
+      setError('Unable to complete this action. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleRetrySync = async (requestId: string) => {
+    try {
+      setError(null);
+      await retrySync(requestId);
+    } catch (actionError) {
+      console.error('Manual sync retry failed', actionError);
+      setError('Unable to retry this action. Please try again.');
+    }
   };
 
   const isLocked = stop.status === 'Returned';
@@ -132,7 +178,11 @@ export default function StopDetails() {
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
         {canArrive ? (
-          <ActionButton label={stop.status === 'Failed' ? 'Mark Retry Arrived' : 'Mark Arrived'} onPress={handleArrive} />
+          <ActionButton
+            disabled={isSubmitting}
+            label={stop.status === 'Failed' ? 'Mark Retry Arrived' : 'Mark Arrived'}
+            onPress={handleArrive}
+          />
         ) : null}
 
         {stop.status === 'Arrived' ? (
@@ -154,7 +204,7 @@ export default function StopDetails() {
                 style={styles.input}
                 value={confirmedPackages}
               />
-              <ActionButton label="Deliver" onPress={handleDeliver} />
+              <ActionButton disabled={isSubmitting} label="Deliver" onPress={handleDeliver} />
             </View>
 
             <View style={styles.section}>
@@ -180,7 +230,7 @@ export default function StopDetails() {
                 value={note}
               />
               <Text style={styles.counter}>{note.trim().length} characters{reason === 'Other' ? ' (10 required)' : ''}</Text>
-              <ActionButton label="Fail stop" onPress={handleFail} secondary />
+              <ActionButton disabled={isSubmitting} label="Fail stop" onPress={handleFail} secondary />
             </View>
           </>
         ) : null}
@@ -191,7 +241,12 @@ export default function StopDetails() {
             <Text style={styles.countdown}>
               {secondsLeft > 0 ? `Undo available for ${secondsLeft}s` : 'Undo window expired'}
             </Text>
-            <ActionButton label="Undo delivery" onPress={handleUndo} disabled={secondsLeft === 0} secondary />
+            <ActionButton
+              disabled={isSubmitting || secondsLeft === 0}
+              label="Undo delivery"
+              onPress={handleUndo}
+              secondary
+            />
           </View>
         ) : null}
 
@@ -216,7 +271,7 @@ export default function StopDetails() {
                 <View style={styles.queueRight}>
                   <SyncBadge state={action.state as SyncState} />
                   {action.state === 'Needs attention' ? (
-                    <Pressable onPress={() => retrySync(action.requestId)} style={styles.retryButton}>
+                    <Pressable onPress={() => void handleRetrySync(action.requestId)} style={styles.retryButton}>
                       <Text style={styles.retryButtonText}>Retry now</Text>
                     </Pressable>
                   ) : null}

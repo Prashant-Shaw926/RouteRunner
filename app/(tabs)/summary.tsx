@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { ScrollView, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { buildSummary } from '../../src/domain/summary';
 import { SyncState } from '../../src/domain/types';
@@ -16,6 +17,17 @@ export default function SummaryScreen() {
   const queue = useRouteStore((state) => state.queue);
   const retrySync = useRouteStore((state) => state.retrySync);
   const summary = buildSummary(stops);
+  const [syncError, setSyncError] = useState<string | null>(null);
+
+  const handleRetry = async (requestId: string) => {
+    try {
+      setSyncError(null);
+      await retrySync(requestId);
+    } catch (error) {
+      console.error('Manual sync retry failed', error);
+      setSyncError('Unable to retry this action. Please try again.');
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -32,6 +44,7 @@ export default function SummaryScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Actions not yet synced</Text>
+          {syncError ? <Text style={styles.error}>{syncError}</Text> : null}
           {queue.length === 0 ? (
             <Text style={styles.muted}>All actions are synced.</Text>
           ) : (
@@ -46,7 +59,7 @@ export default function SummaryScreen() {
                 <View style={styles.actionRight}>
                   <SyncBadge state={action.state as SyncState} />
                   {action.state === 'Needs attention' ? (
-                    <Pressable onPress={() => retrySync(action.requestId)}>
+                    <Pressable onPress={() => void handleRetry(action.requestId)}>
                       <Text style={styles.retry}>Retry now</Text>
                     </Pressable>
                   ) : null}
@@ -94,6 +107,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: { color: '#0f172a', fontSize: 17, fontWeight: '700', marginBottom: 8 },
   muted: { color: '#64748b', fontSize: 13 },
+  error: { color: '#b91c1c', fontSize: 13, marginBottom: 8 },
   actionRow: { alignItems: 'center', borderTopColor: '#e2e8f0', borderTopWidth: 1, flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 12 },
   actionText: { flex: 1 },
   actionTitle: { color: '#334155', fontSize: 14, fontWeight: '600', marginBottom: 4 },

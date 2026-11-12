@@ -14,7 +14,7 @@ const action = (requestId: string, stopId: string): QueuedAction => ({
 });
 
 describe('SyncEngine restart and persistence', () => {
-  it('resumes persisted Pending work with the same requestId', async () => {
+  it('S7 resumes persisted Pending work with the same requestId', async () => {
     const server = new MockServer({
       failureRate: 0,
       minDelayMs: 0,
@@ -38,7 +38,25 @@ describe('SyncEngine restart and persistence', () => {
     expect(engine.getHistory()[0].requestId).toBe('request-1');
   });
 
-  it('automatically syncs retryable work when offline mode is disabled', async () => {
+  it('keeps unsynced actions available to the Summary after restart', async () => {
+    const server = new MockServer({
+      failureRate: 0,
+      minDelayMs: 1000,
+      maxDelayMs: 1000,
+      sleep: () => new Promise<void>(() => undefined),
+      random: () => 0,
+    });
+    const persisted = [action('summary-pending', 'S02')];
+    const engine = new SyncEngine(server, async () => persisted, async () => undefined);
+
+    await engine.start();
+
+    expect(engine.getQueue()).toEqual([
+      expect.objectContaining({ requestId: 'summary-pending', state: 'Pending' }),
+    ]);
+  });
+
+  it('S6 automatically syncs retryable work when the Offline toggle is disabled', async () => {
     const server = new MockServer({
       failureRate: 0,
       minDelayMs: 0,

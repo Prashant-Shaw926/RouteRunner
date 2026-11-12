@@ -20,7 +20,7 @@ describe('Retry backoff S3', () => {
   beforeEach(() => jest.useFakeTimers());
   afterEach(() => jest.useRealTimers());
 
-  it('retries at exactly 2s, 4s, and 8s, then needs attention', async () => {
+  it('S3 retries at exactly 2s, 4s, and 8s, then needs attention', async () => {
     const server = new MockServer({
       failureRate: 1,
       minDelayMs: 0,

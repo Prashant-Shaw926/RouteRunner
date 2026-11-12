@@ -69,7 +69,10 @@ export default function SettingsScreen() {
           text: 'Reset',
           style: 'destructive',
           onPress: () => {
-            void resetDemo();
+            void resetDemo().catch((error) => {
+              console.error('Demo reset failed', error);
+              Alert.alert('Reset failed', 'Unable to reset demo data. Please try again.');
+            });
           },
         },
       ],

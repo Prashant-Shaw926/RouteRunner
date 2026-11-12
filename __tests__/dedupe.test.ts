@@ -14,6 +14,23 @@ const action = (requestId: string): QueuedAction => ({
 });
 
 describe('Duplicate handling S5', () => {
+  it('accepts the same requestId again after an in-flight request fails', async () => {
+    const server = new MockServer({
+      failureRate: 1,
+      minDelayMs: 0,
+      maxDelayMs: 0,
+      sleep: async () => undefined,
+      random: () => 0,
+    });
+    const request = action('failed-then-retried');
+
+    await expect(server.send(request)).rejects.toThrow('Network request failed');
+    server.setFailureRate(0);
+
+    await expect(server.send(request)).resolves.toEqual({ applied: true });
+    expect(server.appliedLog).toEqual(['failed-then-retried']);
+  });
+
   it('does not apply a duplicate after restart', async () => {
     const server = new MockServer({
       failureRate: 0,

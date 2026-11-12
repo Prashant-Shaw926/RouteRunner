@@ -90,14 +90,14 @@ describe('Workflow rules R1-R6', () => {
     });
   });
 
-  it.each(['123456789', ' 123456789 '])('rejects Other notes shorter than 10 trimmed characters: %j', (note) => {
+  it.each(['123456789', ' 123456789 '])('R3 rejects Other notes shorter than 10 trimmed characters: %j', (note) => {
     expect(fail([makeStop({ status: 'Arrived' })], 'S01', 'Other', note, 600)).toEqual({
       ok: false,
       error: ERROR_MESSAGES.otherNoteRequired,
     });
   });
 
-  it('accepts a trimmed Other note of exactly 10 characters', () => {
+  it('R3 accepts Other with a trimmed note of exactly 10 characters', () => {
     const result = fail([makeStop({ status: 'Arrived' })], 'S01', 'Other', ' 1234567890 ', 600);
     expect(result.ok).toBe(true);
     expect(result.ok && result.value[0].failNote).toBe('1234567890');
@@ -177,12 +177,35 @@ describe('Workflow rules R1-R6', () => {
     expect(result.ok && result.value[1].status).toBe('Returned');
   });
 
-  it('allows undo before 60 seconds, but rejects exactly 60 and 61 seconds', () => {
+  it('R5 allows undo within 60 seconds, then expires at and after the boundary', () => {
     const delivered = makeStop({ status: 'Delivered', deliveredAt: 1000 });
     expect(undoSecondsLeft(delivered, 61000)).toBe(0);
     expect(undoDeliver([delivered], 'S01', 59999).ok).toBe(true);
     expect(undoDeliver([delivered], 'S01', 61000)).toEqual({ ok: false, error: ERROR_MESSAGES.undoExpired });
     expect(undoDeliver([delivered], 'S01', 61001)).toEqual({ ok: false, error: ERROR_MESSAGES.undoExpired });
+  });
+
+  it('R5 allows deliver, undo back to Arrived, then a second delivery expires', () => {
+    const arrived = makeStop({ status: 'Arrived' });
+    const delivered = deliver([arrived], 'S01', 'AB', 2, 1000, 600);
+    expect(delivered.ok).toBe(true);
+
+    const undone = undoDeliver(delivered.ok ? delivered.value : [], 'S01', 59999);
+    expect(undone.ok && undone.value[0].status).toBe('Arrived');
+
+    const deliveredAgain = deliver(
+      undone.ok ? undone.value : [],
+      'S01',
+      'AB',
+      2,
+      1000,
+      600,
+    );
+    expect(deliveredAgain.ok).toBe(true);
+    expect(undoDeliver(deliveredAgain.ok ? deliveredAgain.value : [], 'S01', 61000)).toEqual({
+      ok: false,
+      error: ERROR_MESSAGES.undoExpired,
+    });
   });
 
   it('reverts an eligible delivery to Arrived without mutating input', () => {
