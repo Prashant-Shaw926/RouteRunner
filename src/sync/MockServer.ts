@@ -10,6 +10,7 @@ export class NetworkError extends Error {
 
 export class MockServer {
   private applied = new Set<string>();      // S5 dedupe by requestId
+  private inFlight = new Map<string, Promise<{ applied: boolean }>>();
   public offline = false;                   // S6
   public appliedLog: string[] = [];
   constructor(public opts: MockServerOptions = { failureRate: 0.3, minDelayMs: 1000, maxDelayMs: 3000 }) {}
@@ -18,7 +19,19 @@ export class MockServer {
     if (this.applied.has(action.requestId)) {
       return { applied: false };
     }
+    const existing = this.inFlight.get(action.requestId);
+    if (existing) return existing;
 
+    const request = this.performSend(action);
+    this.inFlight.set(action.requestId, request);
+    try {
+      return await request;
+    } finally {
+      this.inFlight.delete(action.requestId);
+    }
+  }
+
+  private async performSend(action: { requestId: string }): Promise<{ applied: boolean }> {
     const random = this.opts.random || Math.random;
     const sleep = this.opts.sleep || ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
     const delayRange = this.opts.maxDelayMs - this.opts.minDelayMs;

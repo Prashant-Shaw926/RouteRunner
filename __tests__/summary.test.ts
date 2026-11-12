@@ -31,9 +31,20 @@ describe('route summary', () => {
       failed: 1,
       returned: 1,
       remaining: 3,
-      successRate: 66.66666666666666,
+      successRate: 50,
       onTimeRate: 50,
     });
+
+  });
+
+  it('includes Failed outcomes in the success-rate denominator', () => {
+    const stops = [
+      makeStop({ id: 'S01', status: 'Delivered', deliveredAtDemo: 600 }),
+      makeStop({ id: 'S02', status: 'Failed', failCount: 1 }),
+      makeStop({ id: 'S03', status: 'Returned', failCount: 2 }),
+    ];
+
+    expect(buildSummary(stops).successRate).toBeCloseTo(33.333333);
   });
 
   it('returns zero rates when no stops are completed or delivered', () => {

@@ -11,9 +11,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useRouteStore } from '../src/store/useRouteStore';
-
-const DEMO_AGENT_NAME = 'Asha';
-const DEMO_PIN = '1234';
+import { DEMO_AGENT_NAME, DEMO_PIN } from '../src/config/demoCredentials';
 
 export default function Login() {
   const router = useRouter();

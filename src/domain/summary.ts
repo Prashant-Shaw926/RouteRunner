@@ -18,14 +18,14 @@ export function buildSummary(stops: Stop[]): RouteSummary {
   const remaining = stops.filter(
     (stop) => stop.status === 'Pending' || stop.status === 'Arrived' || stop.status === 'Failed',
   ).length;
-  const completed = delivered + returned;
-  // successRate = delivered / completed deliveries (Delivered + Returned) * 100.
+  const completed = delivered + failed + returned;
+  // successRate = Delivered / (Delivered + Failed + Returned) * 100; zero when no outcomes exist.
   const successRate = completed === 0 ? 0 : (delivered / completed) * 100;
   const onTime = deliveredStops.filter(
     (stop) => stop.deliveredAtDemo !== undefined &&
       stop.deliveredAtDemo <= toMinutes(stop.window.end),
   ).length;
-  // onTimeRate = on-time Delivered stops / all Delivered stops * 100.
+  // onTimeRate = Delivered stops at or before window end / all Delivered stops * 100; zero when none delivered.
   const onTimeRate = delivered === 0 ? 0 : (onTime / delivered) * 100;
 
   return { delivered, failed, returned, remaining, successRate, onTimeRate };

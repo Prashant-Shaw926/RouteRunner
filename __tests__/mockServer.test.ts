@@ -44,4 +44,21 @@ describe('MockServer', () => {
 
     expect(server.appliedLog).toEqual(['req-1']);
   });
+
+  it('deduplicates a request resent while the first request is in flight', async () => {
+    let release: (() => void) | undefined;
+    const sleep = jest.fn(() => new Promise<void>((resolve) => {
+      release = resolve;
+    }));
+    const server = new MockServer({ ...serverOptions, sleep });
+
+    const first = server.send(action('req-in-flight'));
+    await Promise.resolve();
+    const second = server.send(action('req-in-flight'));
+    release?.();
+
+    await expect(first).resolves.toEqual({ applied: true });
+    await expect(second).resolves.toEqual({ applied: true });
+    expect(server.appliedLog).toEqual(['req-in-flight']);
+  });
 });

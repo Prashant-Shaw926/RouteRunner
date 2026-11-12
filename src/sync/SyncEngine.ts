@@ -104,8 +104,24 @@ export class SyncEngine {
   }
 
   setOffline(offline: boolean): void {
+    const switchedOnline = this.server.offline && !offline;
     this.server.offline = offline;
-    if (!offline) this.processWaiting();
+    if (!switchedOnline) return;
+
+    this.timers.forEach((timer) => this.cancel(timer));
+    this.timers.clear();
+    this.queue.forEach((action) => {
+      if (action.state !== 'Synced') {
+        action.state = 'Pending';
+        action.attempts = 0;
+        action.nextAttemptAt = undefined;
+      }
+    });
+    // Coming back online is an explicit recovery action: even Needs attention
+    // items re-enter the queue, while online failures still require manual retry.
+    this.emit();
+    void this.persist();
+    this.processWaiting();
   }
 
   subscribe(listener: SyncListener): () => void {
@@ -139,6 +155,8 @@ export class SyncEngine {
       .filter((action) => action.stopId === stopId)
       .sort((left, right) => left.seq - right.seq);
     const first = actions[0];
+    // Needs attention is a per-stop circuit breaker while online; switching
+    // offline mode off explicitly resets it before processing resumes.
     if (!first || first.state === 'Needs attention') return undefined;
     return first;
   }
