@@ -94,6 +94,15 @@ export class SyncEngine {
     this.processWaiting();
   }
 
+  async clear(): Promise<void> {
+    this.timers.forEach((timer) => this.cancel(timer));
+    this.timers.clear();
+    this.queue = [];
+    this.history = [];
+    this.emit();
+    await this.persist();
+  }
+
   setOffline(offline: boolean): void {
     this.server.offline = offline;
     if (!offline) this.processWaiting();
