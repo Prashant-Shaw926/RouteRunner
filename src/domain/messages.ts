@@ -1,0 +1,17 @@
+export const ERROR_MESSAGES = {
+  stopNotFound: 'Stop not found',
+  activeStop: (customer: string) => `Finish ${customer} first`,
+  activeStopBeforeUndo: (customer: string) => `Finish or fail ${customer} first`,
+  arriveStatus: 'Stop must be Pending or Failed',
+  deliverStatus: 'Stop must be Arrived before delivery',
+  failStatus: 'Stop must be Arrived before failure',
+  deliveredLocked: 'Delivered stops are locked',
+  returnedLocked: 'Returned stops are locked',
+  recipientRequired: 'Recipient name must be at least 2 characters',
+  packageCountMismatch: 'Confirmed package count must equal expected package count',
+  invalidFailReason: 'Invalid failure reason',
+  otherNoteRequired: 'Other failure reason requires a note of at least 10 characters',
+  urgentCustomerAbsent: 'Urgent stops cannot be marked Customer absent before the window starts',
+  undoStatus: 'Only Delivered stops can be undone',
+  undoExpired: 'The delivery undo window has expired',
+} as const;
